@@ -91,8 +91,8 @@ app.post("/", async (c) => {
       db.run("DELETE FROM sessions WHERE id = ?", [sid]);
     }
 
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Queue timeout") || message.includes("waited too long")) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes("Queue timeout") || errMsg.includes("waited too long")) {
       return c.json({ error: "Server busy. Too many requests. Try again later." }, 503);
     }
     return c.json({ error: "LLM service unavailable" }, 502);
@@ -170,12 +170,7 @@ app.get("/ws", (c) => {
   });
 
   server.addEventListener("message", async (event) => {
-    if (getChatRateLimitKey(ip)) {
-      server.send(JSON.stringify({ type: "error", message: "Rate limit exceeded" }));
-      return;
-    }
-
-    // Per-message rate check (20 req / 60s window shared with REST)
+    // Per-message rate check using dedicated WS counter
     const msgRateKey = `ws:msg:${ip}`;
     if (getChatRateLimitKey(msgRateKey)) {
       server.send(JSON.stringify({ type: "error", message: "Message rate limit exceeded" }));

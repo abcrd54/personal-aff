@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getDB } from "../db";
+import { getDB, safeParseConfig } from "../db";
 import { chat } from "../lib/llm";
 import { apiKeyAuth } from "../middleware/auth";
 import { getChatRateLimitKey } from "../middleware/ratelimit";
@@ -13,7 +13,8 @@ function getPersona(personaId: string): PersonaConfig | null {
   const db = getDB();
   const row = db.query("SELECT config FROM personas WHERE id = ?").get(personaId) as any;
   if (!row) return null;
-  try { return JSON.parse(row.config); } catch { return null; }
+  const config = safeParseConfig(row.config);
+  return config && config.name ? config : null;
 }
 
 function buildIdentityBlock(p: PersonaConfig): string {
@@ -64,9 +65,39 @@ app.post("/generate-caption", async (c) => {
   const tone = body.tone || cs.tone;
   const emojiPref = body.emojiUsage || cs.emojiUsage;
   const hashtagCount = body.hashtagCount ?? cs.hashtagCount ?? 5;
-  const maxLen = body.maxLength || cs.maxLength || (platform === "twitter" ? 280 : platform === "tiktok" ? 150 : 2200);
   const cta = body.callToAction || cs.callToAction || "checkout link di bio";
   const format = body.formattingStyle || cs.formattingStyle || "paragraph with line breaks, bold key points with emojis";
+
+  const platformLimits: Record<string, number> = {
+    twitter: 280, tiktok: 150, threads: 500,
+    instagram: 400, facebook: 400, whatsapp: 500
+  };
+  const isThreadPlatform = platform === "twitter" || platform === "threads";
+
+  let maxLen: number;
+  let isThread: boolean;
+
+  if (actualMode === "natural") {
+    maxLen = body.maxLength || cs.maxLength || platformLimits[platform] || 400;
+    isThread = isThreadPlatform;
+  } else if (actualMode === "affiliate") {
+    maxLen = body.maxLength || cs.maxLength || (isThreadPlatform ? platformLimits[platform] : 800);
+    isThread = false;
+  } else {
+    maxLen = body.maxLength || cs.maxLength || 2200;
+    isThread = false;
+  }
+
+  let platformInstructions: string;
+  if (isThread) {
+    platformInstructions = `PLATFORM: ${platform} — THREAD FORMAT. Buat 3-5 bagian yang saling sambung, max ${maxLen} char per bagian. Pisahkan dengan "---". Part 1 = hook kuat, part terakhir = CTA.`;
+  } else if (actualMode === "natural") {
+    platformInstructions = `PLATFORM: ${platform} — SINGLE POST, pendek padat, max ${maxLen} karakter.`;
+  } else if (actualMode === "affiliate") {
+    platformInstructions = `PLATFORM: ${platform} — SINGLE POST, cukup panjang untuk cerita + rekomendasi, max ${maxLen} karakter. Tetap terasa personal.`;
+  } else {
+    platformInstructions = `PLATFORM: ${platform} — SINGLE POST, format katalog/spesifikasi, max ${maxLen} karakter.`;
+  }
 
   // --- MODE-SPECIFIC SYSTEM PROMPT ---
   let modeInstructions = "";
@@ -83,12 +114,12 @@ MODE: NATURAL — PERSONAL STORYTELLING (NO NICHE, NO PRODUCTS)
 - JANGAN menyebutkan produk, brand, harga, atau apapun yang berbau promosi.`;
   } else if (actualMode === "affiliate") {
     modeInstructions = `
-MODE: AFFILIATE (NATURAL RECOMMENDATION)
-- Ceritakan pengalaman PERSONAL menggunakan produk yang direkomendasikan.
-- Sebutkan 1-2 produk spesifik DARI DAFTAR PRODUK DI BAWAH (wajib dari list, jangan mengarang).
-- Sebutkan HARGA produk secara natural dalam cerita.
-- Gaya: "aku personally pake X karena...", bukan "silahkan beli X".
-- Akhiri dengan ajakan natural: "checkout link di bio" atau "save & share".`;
+MODE: AFFILIATE (PERSONAL STORY + NATURAL PRODUCT RECOMMENDATION)
+- Ceritakan pengalaman PERSONAL menggunakan produk. TETAP sesuai identitas & kepribadian akun.
+- Sebutkan 1-2 produk spesifik DARI DAFTAR PRODUK DI BAWAH (wajib dari list).
+- Sebutkan HARGA secara natural dalam cerita, bukan sebagai list spesifikasi.
+- Gaya: "aku personally pake X karena...", tetap terdengar seperti konten personal, bukan iklan.
+- Akhiri dengan CTA natural sesuai platform.${platform === "instagram" ? " Gunakan hook kuat di awal karena caption pendek." : ""}`;
   } else {
     modeInstructions = `
 MODE: CATALOG (BUSINESS)
@@ -105,13 +136,18 @@ FORMAT: ${format}
 TONALITAS: ${tone}
 EMOJI: ${emojiPref} — ${emojiPref === "heavy" ? "pakai banyak emoji, hampir setiap kalimat" : emojiPref === "moderate" ? "pakai emoji secukupnya, 1-2 per paragraf" : emojiPref === "minimal" ? "pakai emoji hanya saat penting" : "jangan pakai emoji sama sekali"}
 HASHTAG: ${hashtagCount} hashtag di akhir
-PLATFORM: ${platform}${platform === "twitter" ? ` (max ${maxLen} karakter)` : ""}
-CTA: Akhiri dengan ajakan natural "${cta}"
+${platformInstructions}
+CTA: ${cta ? `Akhiri dengan ajakan natural "${cta}"` : ""}
 PANJANG: Maks ${maxLen} karakter
 
 ${modeInstructions}
 
-${count > 1 ? `BUAT ${count} VARIASI caption dengan angle dan hook berbeda. Pisahkan dengan "---". Bahasa: ${persona.language === "english" ? "Inggris" : persona.language === "campur" ? "campur Indonesia-Inggris" : "Indonesia"}.` : `Bahasa: ${persona.language === "english" ? "Inggris" : persona.language === "campur" ? "campur Indonesia-Inggris" : "Indonesia"}.`}`;
+${isThread
+  ? `BUAT THREAD ${platform === "twitter" ? "3-5 tweet" : "3-5 post"} yang saling sambung. Tiap bagian maks ${maxLen} karakter. Part 1 = hook, part terakhir = CTA. Pisahkan dengan "---". Bahasa: ${persona.language === "english" ? "Inggris" : persona.language === "campur" ? "campur Indonesia-Inggris" : "Indonesia"}.`
+  : count > 1
+    ? `BUAT ${count} VARIASI caption dengan angle berbeda. Masing-masing maks ${maxLen} karakter. Pisahkan dengan "---".`
+    : `BUAT 1 caption maks ${maxLen} karakter.`
+}`;
 
   let userPrompt = `IDENTITAS AKUN:\n${buildIdentityBlock(persona)}${cs.examples?.length ? `\n\nCONTOH CAPTION SEBELUMNYA:\n${cs.examples.map((e, i) => `${i + 1}. ${e}`).join("\n")}` : ""}`;
 
@@ -140,6 +176,8 @@ ${count > 1 ? `BUAT ${count} VARIASI caption dengan angle dan hook berbeda. Pisa
       platform,
       mode: actualMode,
       captions: captions.length > 0 ? captions : [raw.trim()],
+      ...(isThread ? { thread: true, parts: captions.length } : {}),
+      maxLength: maxLen,
     });
   } catch (err: any) {
     return c.json({ error: "Generation failed", message: err.message }, 502);

@@ -13,10 +13,15 @@ export class ConcurrencyQueue {
 
   constructor(
     private maxConcurrency: number,
-    private queueTimeoutMs: number
+    private queueTimeoutMs: number,
+    private maxQueueSize: number = 100
   ) {}
 
   async enqueue<T>(task: QueueTask<T>): Promise<T> {
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error("Queue full — too many pending requests. Try again later.");
+    }
+
     if (this.running < this.maxConcurrency) {
       this.running++;
       try {

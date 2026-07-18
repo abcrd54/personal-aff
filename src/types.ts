@@ -97,7 +97,7 @@ export interface PersonaConfig {
 }
 
 export interface CaptionStyle {
-  platform: "instagram" | "tiktok" | "twitter" | "facebook" | "whatsapp";
+  platform: "instagram" | "tiktok" | "twitter" | "facebook" | "whatsapp" | "threads";
   tone: string;
   maxLength?: number;
   hashtagCount?: number;

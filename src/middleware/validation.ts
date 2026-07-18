@@ -93,8 +93,8 @@ export function validatePersonaConfig(config: any): ValidationError[] {
   }
 
   if (config.captionStyle && typeof config.captionStyle === "object") {
-    if (config.captionStyle.platform && !["instagram", "tiktok", "twitter", "facebook", "whatsapp"].includes(config.captionStyle.platform)) {
-      errors.push({ field: "captionStyle.platform", message: "Must be one of: instagram, tiktok, twitter, facebook, whatsapp" });
+    if (config.captionStyle.platform && !["instagram", "tiktok", "twitter", "facebook", "whatsapp", "threads"].includes(config.captionStyle.platform)) {
+      errors.push({ field: "captionStyle.platform", message: "Must be one of: instagram, tiktok, twitter, facebook, whatsapp, threads" });
     }
     if (config.captionStyle.emojiUsage && !["none", "minimal", "moderate", "heavy"].includes(config.captionStyle.emojiUsage)) {
       errors.push({ field: "captionStyle.emojiUsage", message: "Must be one of: none, minimal, moderate, heavy" });

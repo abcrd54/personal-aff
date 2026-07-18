@@ -4,8 +4,9 @@ import { ConcurrencyQueue } from "./queue";
 const FETCH_TIMEOUT_MS = 120_000;
 const MAX_CONCURRENCY = Number(process.env.LLM_MAX_CONCURRENCY) || 3;
 const QUEUE_TIMEOUT_MS = Number(process.env.LLM_QUEUE_TIMEOUT_MS) || 60_000;
+const MAX_QUEUE_SIZE = Number(process.env.LLM_MAX_QUEUE_SIZE) || 100;
 
-const llmQueue = new ConcurrencyQueue(MAX_CONCURRENCY, QUEUE_TIMEOUT_MS);
+const llmQueue = new ConcurrencyQueue(MAX_CONCURRENCY, QUEUE_TIMEOUT_MS, MAX_QUEUE_SIZE);
 
 export function queueStatus() {
   return llmQueue.status();
@@ -60,9 +61,10 @@ export async function chat(messages: LLMMessage[]): Promise<string> {
     }
 
   const data = (await response.json()) as any;
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0]?.message;
+  const content = choice?.content || choice?.reasoning_content;
   if (!content) {
-    console.warn("LLM returned empty/missing content. Response shape:", JSON.stringify(data).slice(0, 200));
+    console.warn("LLM returned empty content. Response shape:", JSON.stringify(data).slice(0, 300));
   }
   return content || "";
   });
@@ -125,7 +127,7 @@ export async function chatStream(
 
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
+          const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning_content;
           if (content) {
             fullText += content;
             onChunk(content);
