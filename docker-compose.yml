@@ -1,0 +1,31 @@
+services:
+  hermes:
+    build: .
+    platform: linux/arm64
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=${PORT:-3000}
+      - DATA_DIR=/app/data
+      - API_KEY=${API_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - LLM_PROVIDER=${LLM_PROVIDER:-tokenrouter}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.tokenrouter.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-deepseek/deepseek-v4-pro}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-2048}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.8}
+      - LLM_MAX_CONCURRENCY=${LLM_MAX_CONCURRENCY:-3}
+      - LLM_QUEUE_TIMEOUT_MS=${LLM_QUEUE_TIMEOUT_MS:-60000}
+      - RATE_LIMIT_CHAT_MAX=${RATE_LIMIT_CHAT_MAX:-20}
+      - RATE_LIMIT_CHAT_WINDOW_MS=${RATE_LIMIT_CHAT_WINDOW_MS:-60000}
+      - RATE_LIMIT_GENERAL_MAX=${RATE_LIMIT_GENERAL_MAX:-60}
+      - RATE_LIMIT_GENERAL_WINDOW_MS=${RATE_LIMIT_GENERAL_WINDOW_MS:-60000}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
