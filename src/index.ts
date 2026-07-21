@@ -47,10 +47,21 @@ app.use(
   cors({
     origin: allowedOrigins.length > 0 ? allowedOrigins : ["*"],
     allowMethods: ["GET", "POST", "PUT", "DELETE"],
-    allowHeaders: ["Content-Type", "x-api-key"],
+    allowHeaders: ["Content-Type", "x-api-key", "Authorization"],
     maxAge: 86400,
   })
 );
+
+app.use("*", async (c, next) => {
+  const start = Date.now();
+  const method = c.req.method;
+  const path = c.req.path;
+  await next();
+  const duration = Date.now() - start;
+  const status = c.res.status;
+  const icon = status >= 500 ? "❌" : status >= 400 ? "⚠️" : "✅";
+  console.log(`${icon} ${method} ${path} → ${status} (${duration}ms)`);
+});
 
 app.route("/api/personas", personasRoute);
 app.route("/api/sessions", sessionsRoute);
