@@ -1,5 +1,5 @@
 services:
-  hermes:
+  aff:
     build: .
     platform: linux/arm64
     ports:

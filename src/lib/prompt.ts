@@ -138,8 +138,6 @@ function buildPersonalPrompt(persona: PersonaConfig): string {
 
   parts.push("\nPENTING: Selalu konsisten dengan kepribadian, gaya bicara, dan aturan di atas. Jangan pernah break character.");
 
-  parts.push(buildProductsSection(persona));
-
   return parts.join("\n");
 }
 

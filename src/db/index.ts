@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const DATA_DIR = process.env.DATA_DIR || join(import.meta.dir, "../../data");
-const DB_PATH = join(DATA_DIR, "hermes.db");
+const DB_PATH = join(DATA_DIR, "aff.db");
 
 let db: Database;
 

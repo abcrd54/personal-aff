@@ -1,15 +1,19 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { initDB, closeDB, getDB } from "./db";
+import { initDB, closeDB, getDB, generateId, safeParseConfig } from "./db";
 import { getAllowedOrigins } from "./middleware/auth";
-import { rateLimitHeaders } from "./middleware/ratelimit";
+import { rateLimitHeaders, getChatRateLimitKey } from "./middleware/ratelimit";
+import { queueStatus } from "./lib/llm";
+import { getCachedPrompt } from "./lib/prompt";
 import personasRoute from "./routes/personas";
 import sessionsRoute from "./routes/sessions";
 import chatRoute from "./routes/chat";
 import aiRoute from "./routes/ai";
 import blueprintsRoute from "./routes/blueprints";
 import contentRoute from "./routes/content";
-import { queueStatus } from "./lib/llm";
+import openaiRoute from "./routes/openai";
+import { initChatWS, handleChatMessage, cleanupChatWS } from "./lib/ws-handler";
+import type { PersonaConfig } from "./types";
 
 const MAX_BODY_SIZE = 512 * 1024;
 
@@ -50,10 +54,11 @@ app.route("/api/chat", chatRoute);
 app.route("/api/ai", aiRoute);
 app.route("/api/blueprints", blueprintsRoute);
 app.route("/api/content", contentRoute);
+app.route("/v1", openaiRoute);
 
 app.get("/", (c) => {
   return c.json({
-    name: "hermes-personal",
+    name: "aff-personal",
     version: "1.0.0",
     docs: {
       auth: "Header x-api-key (jika API_KEY diset di .env)",
@@ -138,10 +143,100 @@ const port = Number(process.env.PORT) || 3000;
 
 const server = Bun.serve({
   port,
-  fetch: app.fetch,
+  websocket: {
+    open(ws) {
+      initChatWS(ws);
+    },
+    message(ws, msg) {
+      handleChatMessage(ws, msg.toString());
+    },
+    close(ws) {
+      cleanupChatWS(ws);
+    },
+  },
+  fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname === "/api/chat/ws" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const json = (status: number, body: unknown) =>
+        new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+      const params = url.searchParams;
+      const apiKey = process.env.API_KEY;
+      if (apiKey) {
+        const qKey = params.get("api_key");
+        const hKey = req.headers.get("x-api-key");
+        if (qKey !== apiKey && hKey !== apiKey) {
+          return json(401, { error: "Unauthorized" });
+        }
+      }
+
+      const origin = req.headers.get("origin");
+      if (origin && allowedOrigins.length > 0 && !allowedOrigins.includes("*") && !allowedOrigins.includes(origin)) {
+        return json(403, { error: "Forbidden origin" });
+      }
+
+      const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+      if (getChatRateLimitKey(ip)) {
+        return json(429, { error: "Rate limit exceeded" });
+      }
+
+      const personaId = params.get("personaId");
+      let sessionId = params.get("sessionId") || undefined;
+
+      if (!sessionId && !personaId) {
+        return json(400, { error: "sessionId or personaId is required" });
+      }
+
+      const db = getDB();
+
+      if (sessionId) {
+        const existing = db.query("SELECT persona_id FROM sessions WHERE id = ?").get(sessionId) as any;
+        if (!existing) {
+          if (!personaId) return json(404, { error: "Session not found" });
+          sessionId = undefined;
+        } else if (personaId && existing.persona_id !== personaId) {
+          return json(403, { error: "Session does not belong to this persona" });
+        }
+      }
+
+      let effectivePersonaId = personaId;
+      if (!sessionId) {
+        if (!personaId) return json(400, { error: "personaId required to create session" });
+        const persona = db.query("SELECT id FROM personas WHERE id = ?").get(personaId) as any;
+        if (!persona) return json(404, { error: "Persona not found" });
+        sessionId = generateId();
+        db.run(
+          "INSERT INTO sessions (id, persona_id, title) VALUES (?, ?, ?)",
+          [sessionId, personaId, "Percakapan Baru"]
+        );
+      } else {
+        const sessionRow = db.query("SELECT persona_id FROM sessions WHERE id = ?").get(sessionId) as any;
+        effectivePersonaId = sessionRow.persona_id;
+      }
+
+      const personaRow = db.query("SELECT config FROM personas WHERE id = ?").get(effectivePersonaId) as any;
+      if (!personaRow) return json(404, { error: "Persona not found" });
+
+      const persona: PersonaConfig = safeParseConfig(personaRow.config);
+      const systemPrompt = getCachedPrompt(effectivePersonaId!, persona);
+
+      const success = server.upgrade(req, {
+        data: {
+          context: {
+            personaId: effectivePersonaId,
+            sessionId,
+            systemPrompt,
+            ip,
+          },
+        },
+      });
+      return success ? undefined : new Response("Upgrade failed", { status: 500 });
+    }
+    return app.fetch(req);
+  },
 });
 
-console.log(`Hermes Personal running on http://localhost:${port}`);
+console.log(`aff-personal running on http://localhost:${port}`);
 
 process.on("SIGINT", () => {
   console.log("\nShutting down...");

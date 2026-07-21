@@ -66,6 +66,7 @@ app.post("/generate-caption", async (c) => {
   const emojiPref = body.emojiUsage || cs.emojiUsage;
   const hashtagCount = body.hashtagCount ?? cs.hashtagCount ?? 5;
   const cta = body.callToAction || cs.callToAction || "checkout link di bio";
+  const effectiveCta = actualMode === "natural" ? "save & share ke temen" : actualMode === "affiliate" ? (cs.callToAction || "checkout link di bio") : "DM atau klik link di bio untuk order!";
   const format = body.formattingStyle || cs.formattingStyle || "paragraph with line breaks, bold key points with emojis";
 
   const platformLimits: Record<string, number> = {
@@ -104,14 +105,13 @@ app.post("/generate-caption", async (c) => {
 
   if (actualMode === "natural") {
     modeInstructions = `
-MODE: NATURAL — PERSONAL STORYTELLING (NO NICHE, NO PRODUCTS)
-- TULIS konten PERSONAL & HUMAN — cerita hidup, pengalaman, refleksi, opini, atau curhatan.
-- JANGAN membahas topik niche akun (skincare, gadget, traveling, dll). JAUHI topik produk atau hobi.
-- Fokus pada MOMEN KEHIDUPAN: relationship, growth, failure, friendship, family, self-discovery, daily struggle, motivasi.
-- Tulis dengan GAYA & KEPRIBADIAN sesuai identitas akun (tone, catchphrase, vocabulary style).
-- Contoh topik: "hari pertama kerja remote", "pelajaran dari gagal", "sahabat yang udah jarang ketemu", "kenapa aku suka hujan", "surat buat diriku 5 tahun lalu".
-- Bangun KONEKSI EMOSIONAL. Audien harus merasa "ini manusia beneran, bukan bot jualan".
-- JANGAN menyebutkan produk, brand, harga, atau apapun yang berbau promosi.`;
+MODE: NATURAL — PERSONAL STORYTELLING (ABSOLUTELY NO PRODUCTS, NO NICHE, NO SELLING)
+- TULIS cerita PERSONAL & HUMAN — pengalaman hidup, refleksi, opini, curhatan, atau momen sehari-hari.
+- DILARANG KERAS menyebutkan: nama produk, brand, harga, rekomendasi, affiliate link, CTA jualan.
+- DILARANG KERAS membahas topik niche/profesi akun. Jangan sebut skincare, gadget, hiking, kopi, atau apapun terkait produk/jasa.
+- Fokus pada MOMEN KEHIDUPAN: relationship, growth, failure, friendship, family, self-discovery, daily struggle, motivasi, kejadian lucu.
+- Tulis seperti manusia beneran curhat di social media — bukan seperti bot, bukan seperti marketer.
+- Bangun KONEKSI EMOSIONAL. Audiens harus merasa "ini orang beneran, bukan akun jualan".`;
   } else if (actualMode === "affiliate") {
     modeInstructions = `
 MODE: AFFILIATE (PERSONAL STORY + NATURAL PRODUCT RECOMMENDATION)
@@ -137,7 +137,7 @@ TONALITAS: ${tone}
 EMOJI: ${emojiPref} — ${emojiPref === "heavy" ? "pakai banyak emoji, hampir setiap kalimat" : emojiPref === "moderate" ? "pakai emoji secukupnya, 1-2 per paragraf" : emojiPref === "minimal" ? "pakai emoji hanya saat penting" : "jangan pakai emoji sama sekali"}
 HASHTAG: ${hashtagCount} hashtag di akhir
 ${platformInstructions}
-CTA: ${cta ? `Akhiri dengan ajakan natural "${cta}"` : ""}
+CTA: ${actualMode === "natural" ? `Akhiri dengan ajakan personal "${effectiveCta}"` : actualMode === "affiliate" ? `Akhiri dengan ajakan natural "${effectiveCta}"` : `Akhiri dengan CTA jelas "${effectiveCta}"`}
 PANJANG: Maks ${maxLen} karakter
 
 ${modeInstructions}
@@ -238,13 +238,12 @@ app.post("/generate-image-prompt", async (c) => {
 
   if (actualMode === "natural") {
     modeInstructions = `
-MODE: NATURAL — LIFESTYLE MOMENT (NO PRODUCTS AT ALL)
-- Gambar TIDAK menampilkan produk apapun. BUKAN tentang niche akun.
-- Fokus pada MOMEN KEHIDUPAN SEHARI-HARI yang relate dengan identitas akun.
-- Tampilkan EMOSI, SUASANA, atau AKTIVITAS MANUSIA.
-- Gunakan settings yang terasa PERSONAL: kamar tidur, kafe, jalanan kota, taman, rumah.
-- Contoh: kalau persona anak kos → suasana hujan di jendela kos, secangkir kopi, laptop, catatan. BUKAN rice cooker atau barang kos.
-- Tujuan: gambar yang membuat audien merasa "ini relatable banget".`;
+MODE: NATURAL — LIFESTYLE MOMENT (ABSOLUTELY NO PRODUCTS IN FRAME)
+- Gambar TIDAK BOLEH menampilkan produk, brand, logo, kemasan, atau apapun yang berbau komersial.
+- Fokus pada MOMEN KEHIDUPAN MANUSIA: emosi, aktivitas, suasana, interaksi.
+- Setting PERSONAL & RELATABLE: kamar tidur, balkon apartemen, kafe kecil, jalanan kota, taman, dapur rumah.
+- BUKAN gambar produk. BUKAN gambar yang mempromosikan apapun.
+- Tujuan: gambar yang membuat audiens merasa "ini relatable banget, ini gue banget".`;
   } else if (actualMode === "affiliate") {
     modeInstructions = `
 MODE: AFFILIATE (PRODUCT + LIFESTYLE)

@@ -1,5 +1,5 @@
 {
-  "name": "hermes-personal",
+  "name": "aff-personal",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -9,9 +9,10 @@
     "db:seed": "bun run src/db/seed.ts"
   },
   "dependencies": {
-    "hono": "^4.6.14"
+    "hono": "^4.6.14",
+    "typescript": "5.7.2"
   },
   "devDependencies": {
-    "@types/bun": "^1.1.14"
+    "@types/bun": "^1.3.14"
   }
 }

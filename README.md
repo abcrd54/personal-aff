@@ -1,6 +1,8 @@
-# Hermes Personal — Backend
+# aff-personal — Backend
 
 AI-powered persona engine. Chat, content generation, affiliate, and business persona management. Bun + Hono + SQLite.
+
+**OpenAI-compatible.** Works with any OpenAI SDK client — just change `base_url`.
 
 ## Quick Start
 
@@ -19,16 +21,77 @@ docker compose up -d
 
 ---
 
-## Usage Examples (curl)
+## OpenAI-Compatible API (`/v1`)
 
-All examples use `x-api-key: hermes-test-key-2024`.
+Use any OpenAI SDK client. Auth via `Authorization: Bearer <API_KEY>` or `x-api-key`.
 
-### 1. Create Persona (Personal)
+### Python
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:3000/v1", api_key="your-api-key")
+
+# List available personas
+models = client.models.list()
+for m in models.data:
+    print(m.id)  # persona name
+
+# Chat (non-streaming)
+chat = client.chat.completions.create(
+    model="Maya",
+    messages=[{"role": "user", "content": "Rekomendasi gunung dong"}],
+)
+print(chat.choices[0].message.content)
+
+# Chat (streaming)
+stream = client.chat.completions.create(
+    model="Maya",
+    messages=[{"role": "user", "content": "Cerita pengalaman pendakian terbaikmu"}],
+    stream=True,
+)
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+### cURL
+
+```bash
+# List personas
+curl -s -H "Authorization: Bearer your-api-key" http://localhost:3000/v1/models
+
+# Chat
+curl -s -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"Maya","messages":[{"role":"user","content":"halo"}]}' \
+  http://localhost:3000/v1/chat/completions
+
+# Streaming
+curl -s -N -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"Maya","messages":[{"role":"user","content":"halo"}],"stream":true}' \
+  http://localhost:3000/v1/chat/completions
+```
+
+### Model Lookup
+
+`model` can be persona **name** or **UUID**. If multiple personas share the same name, use UUID.
+
+---
+
+## Native API (`/api`)
+
+All `/api` routes support `x-api-key` header or `Authorization: Bearer`.
+
+### Persona Management
+
+#### Create Persona (Personal)
 
 ```bash
 curl -X POST http://localhost:3000/api/personas \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "type": "personal",
     "name": "Maya",
@@ -39,7 +102,7 @@ curl -X POST http://localhost:3000/api/personas \
     "occupation": "Content Creator Outdoor",
     "traits": ["adventurous", "ramah", "peduli lingkungan"],
     "hobbies": ["naik gunung", "fotografi"],
-    "backstory": "Maya tumbuh di kaki Gunung Gede. Sejak kecil diajak ayahnya mendaki...",
+    "backstory": "Maya tumbuh di kaki Gunung Gede...",
     "tone": "hangat",
     "language": "indonesia",
     "speechStyle": { "formality": 2, "verbosity": 4, "emotionality": 4, "humorLevel": 3 },
@@ -48,33 +111,18 @@ curl -X POST http://localhost:3000/api/personas \
       "dos": ["Kasih semangat", "Rekomendasi dari pengalaman pribadi"],
       "donts": ["Jangan merendahkan pemula"]
     },
-    "responsePatterns": ["Tanya dulu level pengalaman sebelum rekomendasi"],
-    "captionStyle": {
-      "platform": "instagram",
-      "tone": "hangat & personal",
-      "hashtagCount": 5,
-      "emojiUsage": "moderate",
-      "callToAction": "save & share ke temen outdoor!"
-    },
-    "visualStyle": {
-      "aspectRatio": "4:5",
-      "lighting": "natural",
-      "background": "outdoor",
-      "mood": "adventurous & inspiring"
-    },
     "products": [
-      { "name": "Sepatu Hiking X", "description": "Ringan, grip kuat", "price": "Rp 500.000", "tags": ["gear", "pemula"] },
-      { "name": "Carrier 60L Y", "description": "Buat pendakian 3 hari+", "price": "Rp 1.200.000", "tags": ["gear", "advance"] }
+      { "name": "Sepatu Hiking X", "description": "Ringan, grip kuat", "price": "Rp 500.000", "tags": ["gear", "pemula"] }
     ]
   }'
 ```
 
-### 2. Create Persona (Business)
+#### Create Persona (Business)
 
 ```bash
 curl -X POST http://localhost:3000/api/personas \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "type": "business",
     "name": "SofaIndo",
@@ -85,196 +133,128 @@ curl -X POST http://localhost:3000/api/personas \
       "businessName": "SofaIndo",
       "businessType": "Toko Furniture Online",
       "tagline": "Furniture Impian, Harga Bersahabat",
-      "products": [
-        {
-          "name": "Sofa Minimalis Oslo",
-          "description": "2-seater Skandinavia, kayu solid + dacron premium",
-          "price": "Rp 3.500.000",
-          "category": "Minimalis",
-          "stock": 5,
-          "dimensions": "140x80x85 cm",
-          "variants": [
-            { "name": "Navy", "stock": 2 },
-            { "name": "Beige", "stock": 3 }
-          ]
-        }
-      ],
+      "products": [{
+        "name": "Sofa Minimalis Oslo",
+        "description": "2-seater Skandinavia, kayu solid + dacron premium",
+        "price": "Rp 3.500.000",
+        "category": "Minimalis",
+        "stock": 5,
+        "variants": [{ "name": "Navy", "stock": 2 }, { "name": "Beige", "stock": 3 }]
+      }],
       "services": ["Custom desain", "Konsultasi gratis", "Delivery"],
       "operatingHours": "08:00 - 21:00 WIB",
       "location": "Jakarta Pusat",
-      "policies": ["Garansi 2 tahun", "Retur 7 hari", "Cicilan 0%"],
+      "policies": ["Garansi 2 tahun", "Retur 7 hari"],
       "paymentMethods": ["Transfer", "QRIS", "Kartu Kredit 0%"],
-      "faq": [
-        { "question": "Bisa custom ukuran?", "answer": "Bisa! 2-4 minggu pengerjaan." }
-      ]
+      "faq": [{ "question": "Bisa custom ukuran?", "answer": "Bisa! 2-4 minggu pengerjaan." }]
     }
   }'
 ```
 
-### 3. Chat (REST)
+### Chat (Native REST + WebSocket)
 
 ```bash
+# REST
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
-  -d '{
-    "personaId": "uuid-from-step-1",
-    "message": "Rekomendasi gunung buat pemula dong"
-  }'
+  -H "x-api-key: your-api-key" \
+  -d '{"personaId": "uuid", "message": "Rekomendasi gunung buat pemula dong"}'
+# → { "sessionId": "uuid", "reply": "..." }
 
-# Response:
-# { "sessionId": "uuid", "reply": "Gunung Papandayan cocok buat pemula..." }
-```
-
-### 4. Chat (WebSocket)
-
-```javascript
-const ws = new WebSocket(
-  "ws://localhost:3000/api/chat/ws?personaId=UUID&api_key=hermes-test-key-2024"
-);
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.type === "chunk") console.log(data.content);  // streaming
-  if (data.type === "done") console.log("selesai");
-  if (data.type === "error") console.error(data.message);
-  if (data.type === "ping") {}  // keepalive every 30s
+# WebSocket (streaming)
+const ws = new WebSocket("ws://localhost:3000/api/chat/ws?personaId=UUID&api_key=your-api-key");
+ws.onmessage = (e) => {
+  const d = JSON.parse(e.data);
+  if (d.type === "chunk") console.log(d.content);
+  if (d.type === "done") console.log("done");
 };
-
 ws.send(JSON.stringify({ message: "Rekomendasi gunung dong" }));
 ```
 
-### 5. AI Enhance (Auto-Generate Persona)
+### AI Enhance
+
+Auto-generate full persona config from partial input:
 
 ```bash
 curl -X POST http://localhost:3000/api/ai/enhance-backstory \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "type": "personal",
     "name": "Budi",
     "traits": ["kreatif", "humoris"],
     "hobbies": ["memasak", "fotografi makanan"],
-    "expertise": ["masakan Indonesia"],
     "tone": "hangat",
     "language": "indonesia"
   }'
-
-# Response: Full PersonaConfig with AI-generated backstory, catchphrases,
-#           speechStyle, behavioralRules, values, lifeGoals, quirks...
+# → Full PersonaConfig with AI-generated backstory, catchphrases, speechStyle, etc.
 ```
 
-### 6. Blueprints
+### Blueprints
 
 ```bash
-curl -H "x-api-key: hermes-test-key-2024" \
-  http://localhost:3000/api/blueprints
-
-# Returns 16 ready-to-use persona templates (8 personal + 8 business)
-# Each includes full config: backstory, products, captionStyle, visualStyle
+curl -H "x-api-key: your-api-key" http://localhost:3000/api/blueprints
+# → 16 ready-to-use persona templates (8 personal + 8 business)
 ```
 
-### 7. Generate Caption
+### Content Generation
 
-**Natural (no product):**
+**Caption:**
 ```bash
 curl -X POST http://localhost:3000/api/content/generate-caption \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
-  -d '{
-    "personaId": "uuid",
-    "topic": "belajar nerima diri sendiri",
-    "mode": "natural",
-    "platform": "twitter"
-  }'
-
-# Twitter/Threads return thread format:
-# { "thread": true, "parts": 5, "captions": ["Part 1...", "Part 2...", ...] }
+  -H "x-api-key: your-api-key" \
+  -d '{"personaId": "uuid", "topic": "belajar nerima diri sendiri", "mode": "natural", "platform": "twitter"}'
 ```
 
-**Affiliate (product recommendation):**
-```bash
-curl -X POST http://localhost:3000/api/content/generate-caption \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
-  -d '{
-    "personaId": "uuid",
-    "topic": "Azarine Sunscreen SPF 50",
-    "mode": "affiliate",
-    "platform": "instagram",
-    "count": 2
-  }'
-```
-
-**Platform rules:**
-| Platform | Natural | Affiliate | Business |
-|----------|---------|-----------|----------|
-| Instagram | 400 char, single post | 800 char, cerita+produk | 2200 char |
-| Facebook | 400 char | 800 char | 2200 char |
-| Twitter | **Thread 3-5 tweet** (280/part) | 280 char, single tweet | 2200 char |
-| Threads | **Thread 3-5 post** (500/part) | 500 char, single post | 2200 char |
-| TikTok | 150 char | 150 char | 150 char |
-| WhatsApp | 500 char | 500 char | 2200 char |
-
-### 8. Generate Image Prompt
-
+**Image Prompt:**
 ```bash
 curl -X POST http://localhost:3000/api/content/generate-image-prompt \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
-  -d '{
-    "personaId": "uuid",
-    "productName": "Azarine Sunscreen SPF 50",
-    "scene": "flat lay di meja putih dengan daun monstera",
-    "mode": "affiliate",
-    "engine": "midjourney",
-    "count": 2
-  }'
-
-# Response:
-# { "engine": "midjourney", "aspectRatio": "1:1",
-#   "prompts": ["Top-down flat lay... --ar 1:1 --style raw", "..."],
-#   "visualNote": "Lighting: studio | Background: clean | Mood: clinical" }
+  -H "x-api-key: your-api-key" \
+  -d '{"personaId": "uuid", "productName": "Sunscreen SPF 50", "scene": "flat lay", "mode": "affiliate", "engine": "midjourney"}'
 ```
 
-### 9. Session Management
+**Content Modes:**
+| Mode | Caption | Image | Best For |
+|------|---------|-------|----------|
+| `natural` | Personal story, zero product | Lifestyle moment | Trust building |
+| `affiliate` | Story + product rec | Product in-context | Monetization |
+| `catalog` | Specs + price + CTA | Product showroom | Direct sales |
+
+**Platform Rules:**
+| Platform | Natural | Affiliate | Business |
+|----------|---------|-----------|----------|
+| Instagram | 400 char | 800 char | 2200 char |
+| Facebook | 400 char | 800 char | 2200 char |
+| Twitter | Thread 3-5 tweet (280/part) | 280 char | 2200 char |
+| Threads | Thread 3-5 post (500/part) | 500 char | 2200 char |
+| TikTok | 150 char | 150 char | 150 char |
+| WhatsApp | 500 char | 500 char | 2200 char |
+
+### Sessions
 
 ```bash
-# Create session
 curl -X POST http://localhost:3000/api/sessions \
   -H "Content-Type: application/json" \
-  -H "x-api-key: hermes-test-key-2024" \
+  -H "x-api-key: your-api-key" \
   -d '{"personaId": "uuid", "title": "Rekomendasi Gunung"}'
 
-# List sessions
-curl -H "x-api-key: hermes-test-key-2024" \
-  "http://localhost:3000/api/sessions?personaId=uuid"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/api/sessions?personaId=uuid"
 
-# Get session messages
-curl -H "x-api-key: hermes-test-key-2024" \
-  "http://localhost:3000/api/sessions/SESSION_ID/messages"
-```
-
-### 10. Health Check
-
-```bash
-curl http://localhost:3000/health
-
-# { "status": "ok", "db": "connected", "llm": "connected",
-#   "queue": { "running": 0, "queued": 0, "maxConcurrency": 3, "availableSlots": 3 },
-#   "personas": 5, "uptime": 120.5 }
+curl -H "x-api-key: your-api-key" "http://localhost:3000/api/sessions/SESSION_ID/messages"
 ```
 
 ---
 
 ## API Reference
 
-All routes require `x-api-key` header except `/` and `/health`.
-
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health + queue status |
 | `GET` | `/` | API documentation |
+| `GET` | `/v1/models` | List personas as OpenAI models |
+| `POST` | `/v1/chat/completions` | OpenAI-compatible chat (streaming + non-streaming) |
 | `GET/POST` | `/api/personas` | List / Create persona |
 | `GET/PUT/DELETE` | `/api/personas/:id` | Get / Update / Delete persona |
 | `GET/POST` | `/api/sessions` | List / Create session |
@@ -286,6 +266,8 @@ All routes require `x-api-key` header except `/` and `/health`.
 | `POST` | `/api/ai/enhance-backstory` | AI-generate persona config |
 | `POST` | `/api/content/generate-caption` | Social media caption |
 | `POST` | `/api/content/generate-image-prompt` | AI image generation prompt |
+
+All routes require auth (`x-api-key` or `Authorization: Bearer`) except `/` and `/health`.
 
 ---
 
@@ -315,14 +297,16 @@ All routes require `x-api-key` header except `/` and `/health`.
 ## Architecture
 
 ```
-Client → API (x-api-key auth)
-  ├── /health          → Public health check
-  ├── /api/personas    → CRUD (SQLite)
-  ├── /api/sessions    → Session management
-  ├── /api/chat        → ConcurrencyQueue → LLM API (REST + WebSocket)
-  ├── /api/blueprints  → 16 persona templates
-  ├── /api/content     → Caption + Image prompt generation
-  └── /api/ai          → Auto-generate persona config
+Client → API (Bearer / x-api-key auth)
+  ├── /v1/chat/completions  → OpenAI-compatible chat (SSE streaming)
+  ├── /v1/models            → List personas as models
+  ├── /health               → Public health check
+  ├── /api/personas         → CRUD (SQLite)
+  ├── /api/sessions         → Session management
+  ├── /api/chat             → ConcurrencyQueue → LLM API (REST + WebSocket)
+  ├── /api/blueprints       → 16 persona templates
+  ├── /api/content          → Caption + Image prompt generation
+  └── /api/ai               → Auto-generate persona config
 
 LLM → OpenAI-compatible API (/chat/completions)
 DB  → SQLite WAL mode, UUID primary keys, cascading deletes
@@ -339,14 +323,6 @@ Request 5 → [Queue]  → wait → slot free → process
 Request 101 → Rejected (queue full)
 ```
 
-### Content Modes
-
-| Mode | Caption | Image | Ideal For |
-|------|---------|-------|-----------|
-| `natural` | Personal story, zero product | Lifestyle moment, human focus | Trust building |
-| `affiliate` | Story + product rec | Product in-context | Monetization |
-| `catalog` | Specs + price + CTA | Product showroom | Direct sales |
-
 ---
 
 ## Project Structure
@@ -358,17 +334,19 @@ src/
 ├── db/
 │   ├── index.ts          # SQLite: getDB, initDB, safeParse, UUID
 │   ├── schema.sql        # Tables: personas, sessions, messages
-│   ├── seed.ts           # Demo personas (manually via bun run db:seed)
+│   ├── seed.ts           # Demo personas
 │   └── blueprints.ts     # 16 persona templates
 ├── lib/
-│   ├── llm.ts            # LLM client: chat, chatStream, queue
+│   ├── llm.ts            # LLM client: chat, chatWithUsage, chatStream, queue
 │   ├── queue.ts          # ConcurrencyQueue
-│   └── prompt.ts         # System prompt builder + cache
+│   ├── prompt.ts         # System prompt builder + cache
+│   └── ws-handler.ts     # WebSocket chat handler
 ├── middleware/
-│   ├── auth.ts           # x-api-key + CORS origin
+│   ├── auth.ts           # x-api-key + Bearer + CORS
 │   ├── ratelimit.ts      # In-memory rate limiter
 │   └── validation.ts     # Persona & message validators
 └── routes/
+    ├── openai.ts         # /v1/chat/completions + /v1/models
     ├── personas.ts       # Persona CRUD
     ├── sessions.ts       # Session management
     ├── chat.ts           # REST chat + WebSocket

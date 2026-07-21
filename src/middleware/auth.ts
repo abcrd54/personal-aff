@@ -18,6 +18,13 @@ export async function apiKeyAuth(c: Context, next: Next) {
     return next();
   }
 
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    if (authHeader.slice(7) === API_KEY) {
+      return next();
+    }
+  }
+
   return c.json({ error: "Unauthorized" }, 401);
 }
 

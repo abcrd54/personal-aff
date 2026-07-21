@@ -70,11 +70,51 @@ export async function chat(messages: LLMMessage[]): Promise<string> {
   });
 }
 
+export async function chatWithUsage(messages: LLMMessage[], options?: {
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<{ content: string; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
+  return llmQueue.enqueue(async () => {
+    const config = getConfig();
+
+    const response = await fetchWithTimeout(
+      `${config.baseUrl}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages,
+          max_tokens: options?.maxTokens ?? config.maxTokens,
+          temperature: options?.temperature ?? config.temperature,
+        }),
+      },
+      FETCH_TIMEOUT_MS
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`LLM API error: ${response.status} - ${text}`);
+    }
+
+    const data = (await response.json()) as any;
+    const choice = data.choices?.[0]?.message;
+    const content = choice?.content || choice?.reasoning_content || "";
+    const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+    return { content, usage };
+  });
+}
+
 export async function chatStream(
   messages: LLMMessage[],
   onChunk: (text: string) => void,
   onDone: (fullText: string) => void,
-  onError: (err: Error) => void
+  onError: (err: Error) => void,
+  options?: { temperature?: number; maxTokens?: number }
 ): Promise<void> {
   try {
     await llmQueue.enqueue(async () => {
@@ -91,8 +131,8 @@ export async function chatStream(
         body: JSON.stringify({
           model: config.model,
           messages,
-          max_tokens: config.maxTokens,
-          temperature: config.temperature,
+          max_tokens: options?.maxTokens ?? config.maxTokens,
+          temperature: options?.temperature ?? config.temperature,
           stream: true,
         }),
       },
