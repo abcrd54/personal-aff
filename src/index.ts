@@ -22,6 +22,10 @@ if (!process.env.LLM_API_KEY) {
 }
 
 if (!process.env.API_KEY) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("FATAL: API_KEY must be set in production.");
+    process.exit(1);
+  }
   console.warn("WARNING: API_KEY not set. All API routes are UNAUTHENTICATED.");
 }
 

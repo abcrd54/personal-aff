@@ -66,7 +66,12 @@ export function handleChatMessage(ws: ServerWebSocket<unknown>, msg: string) {
     "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
     [sessionId, "user", data.message]
   );
-  const userMsgId = insertResult.lastInsertRowid;
+  const userMsgId = Number(insertResult.lastInsertRowid);
+
+  if (insertResult.changes === 0 || userMsgId === 0) {
+    ws.send(JSON.stringify({ type: "error", message: "Failed to save message" }));
+    return;
+  }
 
   const history = db.query(
     "SELECT role, content FROM messages WHERE session_id = ? ORDER BY created_at ASC LIMIT 50"
@@ -92,7 +97,7 @@ export function handleChatMessage(ws: ServerWebSocket<unknown>, msg: string) {
     },
     (err) => {
       console.error("WS chat stream error:", err);
-      db.run("DELETE FROM messages WHERE id = ?", [userMsgId]);
+      try { db.run("DELETE FROM messages WHERE id = ?", [userMsgId]); } catch {}
       const m = err?.message || "LLM service unavailable";
       ws.send(JSON.stringify({ type: "error", message: m.includes("Queue") ? "Server busy, try again." : "LLM service unavailable" }));
       ctx.streaming = false;

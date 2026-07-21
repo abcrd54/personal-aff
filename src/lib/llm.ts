@@ -116,6 +116,18 @@ export async function chatStream(
   onError: (err: Error) => void,
   options?: { temperature?: number; maxTokens?: number }
 ): Promise<void> {
+  let done = false;
+  const safeOnError = (err: Error) => {
+    if (done) return;
+    done = true;
+    onError(err);
+  };
+  const safeOnDone = (fullText: string) => {
+    if (done) return;
+    done = true;
+    onDone(fullText);
+  };
+
   try {
     await llmQueue.enqueue(async () => {
     const config = getConfig();
@@ -176,9 +188,9 @@ export async function chatStream(
       }
     }
 
-    onDone(fullText);
-    }).catch(onError);
+    safeOnDone(fullText);
+    }).catch(safeOnError);
   } catch (err) {
-    onError(err instanceof Error ? err : new Error(String(err)));
+    safeOnError(err instanceof Error ? err : new Error(String(err)));
   }
 }

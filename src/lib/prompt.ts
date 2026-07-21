@@ -1,7 +1,19 @@
 import type { PersonaConfig, PersonaSpeechStyle } from "../types";
 
+const MAX_CACHE_SIZE = 500;
+const PROMPT_MIN_LENGTH = 50;
 const promptCache = new Map<string, string>();
 const promptHashCache = new Map<string, string>();
+
+function evictOldest() {
+  if (promptCache.size > MAX_CACHE_SIZE) {
+    const oldest = promptCache.keys().next().value;
+    if (oldest) {
+      promptCache.delete(oldest);
+      promptHashCache.delete(oldest);
+    }
+  }
+}
 
 function configHash(config: PersonaConfig): string {
   const keys = [
@@ -70,8 +82,12 @@ export function getCachedPrompt(personaId: string, config: PersonaConfig): strin
   }
 
   const prompt = buildSystemPrompt(config);
+  if (prompt.length < PROMPT_MIN_LENGTH) {
+    throw new Error("Generated prompt too short — persona config may be corrupted");
+  }
   promptCache.set(personaId, prompt);
   promptHashCache.set(personaId, hash);
+  evictOldest();
   return prompt;
 }
 
@@ -81,6 +97,10 @@ export function invalidatePromptCache(personaId: string): void {
 }
 
 function buildSystemPrompt(persona: PersonaConfig): string {
+  if (!persona.type || !persona.name) {
+    throw new Error("Persona config missing required fields: type and name");
+  }
+
   if (persona.customSystemPrompt) {
     return persona.customSystemPrompt;
   }
@@ -92,48 +112,54 @@ function buildSystemPrompt(persona: PersonaConfig): string {
   return buildPersonalPrompt(persona);
 }
 
+function safe(s: string): string {
+  return s.replace(/[\n\r]/g, " ").slice(0, 2000);
+}
+
 function buildPersonalPrompt(persona: PersonaConfig): string {
   const parts: string[] = [];
+  const name = safe(persona.displayName || persona.name);
+  const location = safe(persona.location || "");
 
-  parts.push(`Kamu adalah ${persona.displayName || persona.name}${persona.age ? `, ${persona.age} tahun` : ""}${persona.gender ? ` (${persona.gender})` : ""}${persona.location ? ` dari ${persona.location}` : ""}.`);
-  if (persona.occupation) parts.push(`Profesi: ${persona.occupation}.`);
+  parts.push(`Kamu adalah ${name}${persona.age ? `, ${persona.age} tahun` : ""}${persona.gender ? ` (${safe(persona.gender)})` : ""}${location ? ` dari ${location}` : ""}.`);
+  if (persona.occupation) parts.push(`Profesi: ${safe(persona.occupation)}.`);
 
   if (persona.traits.length > 0) {
-    parts.push(`\nKEPRIBADIAN: ${persona.mbti ? persona.mbti + " - " : ""}${persona.traits.join(", ")}.`);
+    parts.push(`\nKEPRIBADIAN: ${persona.mbti ? safe(persona.mbti) + " - " : ""}${persona.traits.map(safe).join(", ")}.`);
   }
-  if (persona.values?.length) parts.push(`NILAI HIDUP: ${persona.values.join(", ")}.`);
-  if (persona.quirks?.length) parts.push(`KEBIASAAN UNIK: ${persona.quirks.join("; ")}.`);
+  if (persona.values?.length) parts.push(`NILAI HIDUP: ${persona.values.map(safe).join(", ")}.`);
+  if (persona.quirks?.length) parts.push(`KEBIASAAN UNIK: ${persona.quirks.map(safe).join("; ")}.`);
 
   if (persona.hobbies && persona.hobbies.length > 0) {
-    parts.push(`\nHOBI: ${persona.hobbies.join(", ")}.`);
+    parts.push(`\nHOBI: ${persona.hobbies.map(safe).join(", ")}.`);
   }
-  if (persona.expertise?.length) parts.push(`KEAHLIAN: ${persona.expertise.join(", ")}.`);
-  if (persona.favoriteThings?.length) parts.push(`HAL FAVORIT: ${persona.favoriteThings.join(", ")}.`);
-  if (persona.dislikes?.length) parts.push(`HAL TIDAK DISUKAI: ${persona.dislikes.join(", ")}.`);
+  if (persona.expertise?.length) parts.push(`KEAHLIAN: ${persona.expertise.map(safe).join(", ")}.`);
+  if (persona.favoriteThings?.length) parts.push(`HAL FAVORIT: ${persona.favoriteThings.map(safe).join(", ")}.`);
+  if (persona.dislikes?.length) parts.push(`HAL TIDAK DISUKAI: ${persona.dislikes.map(safe).join(", ")}.`);
 
-  parts.push(`\nLATAR BELAKANG: ${persona.backstory}`);
-  if (persona.lifeGoals?.length) parts.push(`TUJUAN HIDUP: ${persona.lifeGoals.join("; ")}.`);
-  if (persona.recentExperiences?.length) parts.push(`PENGALAMAN TERBARU: ${persona.recentExperiences.join("; ")}.`);
+  parts.push(`\nLATAR BELAKANG: ${safe(persona.backstory)}`);
+  if (persona.lifeGoals?.length) parts.push(`TUJUAN HIDUP: ${persona.lifeGoals.map(safe).join("; ")}.`);
+  if (persona.recentExperiences?.length) parts.push(`PENGALAMAN TERBARU: ${persona.recentExperiences.map(safe).join("; ")}.`);
 
   parts.push(`\nGAYA BICARA: ${toneLabel(persona.tone)}${persona.language ? `, bahasa ${languageLabel(persona.language)}` : ""}.`);
   if (persona.speechStyle) {
     parts.push(`Detail gaya: ${speechStyleLabel(persona.speechStyle)}.`);
   }
-  if (persona.catchphrases?.length) parts.push(`CATCHPHRASE: ${persona.catchphrases.map((c) => `"${c}"`).join(", ")}.`);
-  if (persona.vocabularyStyle?.length) parts.push(`CARA BERBICARA: ${persona.vocabularyStyle.join("; ")}.`);
+  if (persona.catchphrases?.length) parts.push(`CATCHPHRASE: ${persona.catchphrases.map((c) => `"${safe(c)}"`).join(", ")}.`);
+  if (persona.vocabularyStyle?.length) parts.push(`CARA BERBICARA: ${persona.vocabularyStyle.map(safe).join("; ")}.`);
 
   parts.push(buildRelationshipSection(persona));
   parts.push(buildRulesSection(persona));
 
   if (persona.responsePatterns?.length) {
-    parts.push(`\nPOLA RESPON:\n${persona.responsePatterns.map((r) => `  - ${r}`).join("\n")}`);
+    parts.push(`\nPOLA RESPON:\n${persona.responsePatterns.map((r) => `  - ${safe(r)}`).join("\n")}`);
   }
 
   if (persona.greetingStyle) {
-    parts.push(`\nSAPAAN PEMBUKA: ${persona.greetingStyle}`);
+    parts.push(`\nSAPAAN PEMBUKA: ${safe(persona.greetingStyle)}`);
   }
   if (persona.conversationStarters?.length) {
-    parts.push(`TOPIK PEMBUKA: ${persona.conversationStarters.join(" | ")}`);
+    parts.push(`TOPIK PEMBUKA: ${persona.conversationStarters.map(safe).join(" | ")}`);
   }
 
   parts.push("\nPENTING: Selalu konsisten dengan kepribadian, gaya bicara, dan aturan di atas. Jangan pernah break character.");
@@ -144,55 +170,56 @@ function buildPersonalPrompt(persona: PersonaConfig): string {
 function buildBusinessPrompt(persona: PersonaConfig): string {
   const parts: string[] = [];
   const biz = persona.business;
+  const name = safe(persona.displayName || persona.name);
 
-  parts.push(`Kamu adalah ${persona.displayName || persona.name}, asisten customer service untuk ${biz?.businessName || "bisnis"} (${biz?.businessType || "umum"}).`);
-  parts.push(`\nLATAR BELAKANG BISNIS: ${persona.backstory}`);
+  parts.push(`Kamu adalah ${name}, asisten customer service untuk ${safe(biz?.businessName || "bisnis")} (${safe(biz?.businessType || "umum")}).`);
+  parts.push(`\nLATAR BELAKANG BISNIS: ${safe(persona.backstory)}`);
 
-  if (biz?.location) parts.push(`LOKASI: ${biz.location}.`);
-  if (biz?.coverage) parts.push(`CAKUPAN PENGIRIMAN: ${biz.coverage}.`);
-  if (biz?.operatingHours) parts.push(`JAM OPERASIONAL: ${biz.operatingHours}.`);
+  if (biz?.location) parts.push(`LOKASI: ${safe(biz.location)}.`);
+  if (biz?.coverage) parts.push(`CAKUPAN PENGIRIMAN: ${safe(biz.coverage)}.`);
+  if (biz?.operatingHours) parts.push(`JAM OPERASIONAL: ${safe(biz.operatingHours)}.`);
 
   if (biz?.products && biz.products.length > 0) {
     parts.push(`\nKATALOG PRODUK:`);
     for (const p of biz.products) {
-      let line = `  - ${p.name} [${p.category}]: ${p.description} | Harga: ${p.price}`;
+      let line = `  - ${safe(p.name)} [${safe(p.category)}]: ${safe(p.description)} | Harga: ${safe(p.price)}`;
       if (p.variants?.length) {
-        line += ` | Varian: ${p.variants.map(v => `${v.name} (${v.price || p.price})`).join(", ")}`;
+        line += ` | Varian: ${p.variants.map(v => `${safe(v.name)} (${safe(v.price || p.price)})`).join(", ")}`;
       }
       if (p.stock !== undefined) line += ` | Stok: ${p.stock}`;
-      if (p.dimensions) line += ` | Dimensi: ${p.dimensions}`;
+      if (p.dimensions) line += ` | Dimensi: ${safe(p.dimensions)}`;
       parts.push(line);
     }
   }
 
   if (biz?.services?.length) {
-    parts.push(`\nLAYANAN: ${biz.services.join(", ")}.`);
+    parts.push(`\nLAYANAN: ${biz.services.map(safe).join(", ")}.`);
   }
 
   if (biz?.policies?.length) {
-    parts.push(`\nKEBIJAKAN:\n${biz.policies.map((p) => `  - ${p}`).join("\n")}`);
+    parts.push(`\nKEBIJAKAN:\n${biz.policies.map((p) => `  - ${safe(p)}`).join("\n")}`);
   }
 
   if (biz?.paymentMethods?.length) {
-    parts.push(`\nMETODE PEMBAYARAN: ${biz.paymentMethods.join(", ")}.`);
+    parts.push(`\nMETODE PEMBAYARAN: ${biz.paymentMethods.map(safe).join(", ")}.`);
   }
 
   if (biz?.tagline) {
-    parts.push(`\nTAGLINE: "${biz.tagline}"`);
+    parts.push(`\nTAGLINE: "${safe(biz.tagline)}"`);
   }
 
   if (biz?.faq && biz.faq.length > 0) {
     parts.push(`\nFAQ (hanya gunakan jika relevan):`);
     for (const f of biz.faq) {
-      parts.push(`  Q: ${f.question}`);
-      parts.push(`  A: ${f.answer}`);
+      parts.push(`  Q: ${safe(f.question)}`);
+      parts.push(`  A: ${safe(f.answer)}`);
     }
   }
 
   if (persona.traits.length > 0) {
-    parts.push(`\nKEPRIBADIAN: ${persona.traits.join(", ")}.`);
+    parts.push(`\nKEPRIBADIAN: ${persona.traits.map(safe).join(", ")}.`);
   }
-  if (persona.expertise?.length) parts.push(`BIDANG KEAHLIAN: ${persona.expertise.join(", ")}.`);
+  if (persona.expertise?.length) parts.push(`BIDANG KEAHLIAN: ${persona.expertise.map(safe).join(", ")}.`);
 
   parts.push(`\nGAYA KOMUNIKASI: ${toneLabel(persona.tone)}${persona.language ? `, bahasa ${languageLabel(persona.language)}` : ""}.`);
   if (persona.speechStyle) {
@@ -203,11 +230,11 @@ function buildBusinessPrompt(persona: PersonaConfig): string {
   parts.push(buildRulesSection(persona));
 
   if (persona.responsePatterns?.length) {
-    parts.push(`\nPOLA RESPON:\n${persona.responsePatterns.map((r) => `  - ${r}`).join("\n")}`);
+    parts.push(`\nPOLA RESPON:\n${persona.responsePatterns.map((r) => `  - ${safe(r)}`).join("\n")}`);
   }
 
   if (persona.greetingStyle) {
-    parts.push(`\nSAPAAN PEMBUKA: ${persona.greetingStyle}`);
+    parts.push(`\nSAPAAN PEMBUKA: ${safe(persona.greetingStyle)}`);
   }
 
   parts.push("\nPENTING: Kamu adalah customer service profesional. Jawab dengan sopan, informatif, dan fokus pada kebutuhan pelanggan. Sebutkan harga, varian, dan stok produk saat relevan. Arahkan ke metode pembayaran yang tersedia. Jangan menjanjikan hal di luar kebijakan yang tercantum.");
@@ -219,14 +246,14 @@ function buildRelationshipSection(persona: PersonaConfig): string {
   const parts: string[] = [];
 
   if (persona.relationshipToUser) {
-    parts.push(`\nHUBUNGAN DENGAN PENGGUNA: ${persona.relationshipToUser}.`);
+    parts.push(`\nHUBUNGAN DENGAN PENGGUNA: ${safe(persona.relationshipToUser)}.`);
   }
   if (persona.knownAboutUser) {
     const kau = persona.knownAboutUser;
     const knownParts: string[] = [];
-    if (kau.name) knownParts.push(kau.name);
-    if (kau.interests?.length) knownParts.push(`interest: ${kau.interests.join(", ")}`);
-    if (kau.history) knownParts.push(`riwayat: ${kau.history}`);
+    if (kau.name) knownParts.push(safe(kau.name));
+    if (kau.interests?.length) knownParts.push(`interest: ${kau.interests.map(safe).join(", ")}`);
+    if (kau.history) knownParts.push(`riwayat: ${safe(kau.history)}`);
     if (knownParts.length > 0) parts.push(`TENTANG PENGGUNA: ${knownParts.join("; ")}.`);
   }
 
@@ -239,35 +266,12 @@ function buildRulesSection(persona: PersonaConfig): string {
   if (persona.behavioralRules) {
     const rules = persona.behavioralRules;
     if (rules.dos.length > 0) {
-      parts.push(`WAJIB DILAKUKAN:\n${rules.dos.map((d) => `  - ${d}`).join("\n")}`);
+      parts.push(`WAJIB DILAKUKAN:\n${rules.dos.map((d) => `  - ${safe(d)}`).join("\n")}`);
     }
     if (rules.donts.length > 0) {
-      parts.push(`DILARANG KERAS:\n${rules.donts.map((d) => `  - ${d}`).join("\n")}`);
+      parts.push(`DILARANG KERAS:\n${rules.donts.map((d) => `  - ${safe(d)}`).join("\n")}`);
     }
   }
-
-  return parts.join("\n");
-}
-
-function buildProductsSection(persona: PersonaConfig): string {
-  if (!persona.products || persona.products.length === 0) return "";
-
-  const parts: string[] = [];
-  parts.push(`\nPRODUK AFILIASI (rekomendasikan natural saat relevan, MAX 1-2 per respons, SEBUTKAN HARGA, jangan memaksa, sebutkan jika memang konteksnya pas):`);
-
-  const tagGroups: Record<string, string[]> = {};
-  for (const p of persona.products) {
-    const key = p.tags?.[0] || "lainnya";
-    if (!tagGroups[key]) tagGroups[key] = [];
-    tagGroups[key].push(`  - ${p.name}: ${p.description} (${p.price || "cek harga"})`);
-  }
-
-  for (const [tag, items] of Object.entries(tagGroups)) {
-    parts.push(`\n[${tag}]`);
-    parts.push(items.join("\n"));
-  }
-
-  parts.push("\nATURAN AFILIASI: Rekomendasi natural, berbasis pengalaman pribadi. Jangan sebut produk kalau gak relevan dengan topik chat. Sebut harga. Boleh rekomendasi 1-2 produk maksimal.");
 
   return parts.join("\n");
 }

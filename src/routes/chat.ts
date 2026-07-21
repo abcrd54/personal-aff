@@ -7,6 +7,19 @@ import { getChatRateLimitKey } from "../middleware/ratelimit";
 import { validateChatMessage } from "../middleware/validation";
 import type { LLMMessage, PersonaConfig } from "../types";
 
+const sessionLocks = new Map<string, Promise<void>>();
+
+function withSessionLock(sessionId: string, fn: () => Promise<any>): Promise<any> {
+  const prev = sessionLocks.get(sessionId) || Promise.resolve();
+  const next = prev.then(fn, fn).finally(() => {
+    if (sessionLocks.get(sessionId) === next) {
+      sessionLocks.delete(sessionId);
+    }
+  });
+  sessionLocks.set(sessionId, next);
+  return next;
+}
+
 const app = new Hono();
 
 app.use("/", apiKeyAuth);
@@ -70,10 +83,14 @@ app.post("/", async (c) => {
     "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
     [sid, "user", message]
   );
-  const userMsgId = insertResult.lastInsertRowid;
+  const userMsgId = Number(insertResult.lastInsertRowid);
+
+  if (insertResult.changes === 0 || userMsgId === 0) {
+    return c.json({ error: "Failed to save message" }, 500);
+  }
 
   try {
-    const reply = await chat(messages);
+    const reply = await withSessionLock(sid!, () => chat(messages));
 
     db.run(
       "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
@@ -85,9 +102,9 @@ app.post("/", async (c) => {
     return c.json({ sessionId: sid, reply });
   } catch (err) {
     console.error("Chat error:", err);
-    db.run("DELETE FROM messages WHERE id = ?", [userMsgId]);
+    try { db.run("DELETE FROM messages WHERE id = ?", [userMsgId]); } catch {}
     if (newSessionCreated) {
-      db.run("DELETE FROM sessions WHERE id = ?", [sid]);
+      try { db.run("DELETE FROM sessions WHERE id = ?", [sid]); } catch {}
     }
 
     const errMsg = err instanceof Error ? err.message : String(err);

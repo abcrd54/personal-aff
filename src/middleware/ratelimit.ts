@@ -6,14 +6,19 @@ const CHAT_WINDOW_MS = Number(process.env.RATE_LIMIT_CHAT_WINDOW_MS) || 60000;
 const GENERAL_MAX_REQUESTS = Number(process.env.RATE_LIMIT_GENERAL_MAX) || 60;
 const GENERAL_WINDOW_MS = Number(process.env.RATE_LIMIT_GENERAL_WINDOW_MS) || 60000;
 
+const MAX_ENTRIES = 10000;
 const CLEANUP_INTERVAL_MS = 300_000;
 
 function cleanupExpiredEntries() {
   const now = Date.now();
+  const toDelete: string[] = [];
   for (const [key, entry] of SIMPLE_RATE_LIMIT) {
     if (now > entry.resetAt) {
-      SIMPLE_RATE_LIMIT.delete(key);
+      toDelete.push(key);
     }
+  }
+  for (const key of toDelete) {
+    SIMPLE_RATE_LIMIT.delete(key);
   }
 }
 
@@ -28,6 +33,10 @@ function isRateLimited(
   const entry = SIMPLE_RATE_LIMIT.get(key);
 
   if (!entry || now > entry.resetAt) {
+    if (SIMPLE_RATE_LIMIT.size >= MAX_ENTRIES) {
+      const oldest = SIMPLE_RATE_LIMIT.keys().next().value;
+      if (oldest) SIMPLE_RATE_LIMIT.delete(oldest);
+    }
     SIMPLE_RATE_LIMIT.set(key, { count: 1, resetAt: now + windowMs });
     return false;
   }
