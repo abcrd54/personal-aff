@@ -277,12 +277,13 @@ All routes require auth (`x-api-key` or `Authorization: Bearer`) except `/` and 
 |-----|---------|-------------|
 | `PORT` | `3000` | Server port |
 | `API_KEY` | — | API auth key (unset = open) |
+| `NODE_ENV` | — | Set to `production` for strict API_KEY check |
 | `ALLOWED_ORIGINS` | — | CORS origins, comma-separated |
 | `LLM_API_KEY` | — | **Required.** LLM provider key |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gpt-4o-mini` | Model name |
 | `LLM_MAX_TOKENS` | `2048` | Max output tokens |
-| `LLM_TEMPERATURE` | `0.8` | Creativity (0-1) |
+| `LLM_TEMPERATURE` | `0.8` | Creativity (0-2) |
 | `LLM_MAX_CONCURRENCY` | `3` | Max simultaneous LLM calls |
 | `LLM_QUEUE_TIMEOUT_MS` | `60000` | Max queue wait before 503 |
 | `LLM_MAX_QUEUE_SIZE` | `100` | Max queued requests before reject |

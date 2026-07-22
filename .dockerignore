@@ -8,5 +8,6 @@ data/*.db-*
 .git/
 .gitignore
 .gitattributes
-*.md
+README.md
+AGENTS.md
 .DS_Store
