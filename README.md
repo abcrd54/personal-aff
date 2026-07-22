@@ -4,6 +4,26 @@ AI-powered persona engine. Chat, content generation, affiliate, and business per
 
 **OpenAI-compatible.** Works with any OpenAI SDK client — just change `base_url`.
 
+## Contents
+
+- [Quick Start](#quick-start)
+- [Deployment](#deployment)
+- [OpenAI-Compatible API](#openai-compatible-api-v1)
+- [Native API](#native-api-api)
+  - [Persona Management](#persona-management)
+  - [Chat](#chat-native-rest--websocket)
+  - [AI Enhance](#ai-enhance)
+  - [Blueprints](#blueprints)
+  - [Content Generation](#content-generation)
+  - [Sessions](#sessions)
+- [API Reference Table](#api-reference)
+- [Configuration](#configuration)
+- [Prompt Customization](#prompt-customization)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Scripts](#scripts)
+- [Tech Stack](#tech-stack)
+
 ## Quick Start
 
 ```bash
