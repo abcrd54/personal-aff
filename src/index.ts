@@ -154,7 +154,7 @@ app.onError((err, c) => {
   return c.json({ error: "Internal server error" }, 500);
 });
 
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 3001;
 
 const server = Bun.serve({
   port,
