@@ -279,6 +279,7 @@ All routes require auth (`x-api-key` or `Authorization: Bearer`) except `/` and 
 | `API_KEY` | — | API auth key (unset = open) |
 | `NODE_ENV` | — | Set to `production` for strict API_KEY check |
 | `ALLOWED_ORIGINS` | — | CORS origins, comma-separated |
+| `LLM_PROVIDER` | `openai` | Provider label |
 | `LLM_API_KEY` | — | **Required.** LLM provider key |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gpt-4o-mini` | Model name |
@@ -292,6 +293,48 @@ All routes require auth (`x-api-key` or `Authorization: Bearer`) except `/` and 
 | `RATE_LIMIT_CHAT_WINDOW_MS` | `60000` | Chat rate limit window |
 | `RATE_LIMIT_GENERAL_MAX` | `60` | General requests per window |
 | `RATE_LIMIT_GENERAL_WINDOW_MS` | `60000` | General rate limit window |
+
+---
+
+## Deployment
+
+### Docker (recommended)
+
+```bash
+cp .env.example .env
+# Edit .env → set LLM_API_KEY + API_KEY
+docker compose up -d
+```
+
+### Manual
+
+```bash
+cp .env.example .env
+# Edit .env → set LLM_API_KEY + API_KEY
+bun install && bun run start
+```
+
+### Reverse Proxy (Nginx)
+
+```nginx
+server {
+    listen 80;
+    location /api/ { proxy_pass http://127.0.0.1:3000; }
+    location /v1/  { proxy_pass http://127.0.0.1:3000; }
+}
+```
+
+## Prompt Customization
+
+All LLM prompts are external `.md` files in `skills/`:
+
+```
+skills/
+├── 05-caption-prompt.md   ← Edit caption behavior, tone, slang rules
+└── 06-image-prompt.md     ← Edit image prompt style, mode rules
+```
+
+Edit these files and restart the server to change how personas write captions or generate image prompts. No code changes needed. Supports `${var}` interpolation for dynamic parameters.
 
 ---
 
