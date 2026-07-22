@@ -1,3 +1,5 @@
+import type { Context } from "hono";
+
 const SIMPLE_RATE_LIMIT: Map<string, { count: number; resetAt: number }> =
   new Map();
 
@@ -47,6 +49,15 @@ function isRateLimited(
 
   entry.count++;
   return false;
+}
+
+export function getClientIP(c: Context): string {
+  const raw = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  return raw.split(",")[0].trim();
+}
+
+export function parseClientIP(raw: string): string {
+  return raw.split(",")[0].trim();
 }
 
 export function getChatRateLimitKey(ip: string): boolean {

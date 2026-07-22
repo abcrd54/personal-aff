@@ -1,7 +1,7 @@
 import type { LLMConfig, LLMMessage } from "../types";
 import { ConcurrencyQueue } from "./queue";
 
-const FETCH_TIMEOUT_MS = 120_000;
+const FETCH_TIMEOUT_MS = Number(process.env.LLM_FETCH_TIMEOUT) || 120_000;
 const MAX_CONCURRENCY = Number(process.env.LLM_MAX_CONCURRENCY) || 3;
 const QUEUE_TIMEOUT_MS = Number(process.env.LLM_QUEUE_TIMEOUT_MS) || 60_000;
 const MAX_QUEUE_SIZE = Number(process.env.LLM_MAX_QUEUE_SIZE) || 100;

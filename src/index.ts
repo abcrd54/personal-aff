@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initDB, closeDB, getDB, generateId, safeParseConfig } from "./db";
 import { getAllowedOrigins } from "./middleware/auth";
-import { rateLimitHeaders, getChatRateLimitKey } from "./middleware/ratelimit";
+import { rateLimitHeaders, getChatRateLimitKey, parseClientIP } from "./middleware/ratelimit";
 import { queueStatus } from "./lib/llm";
 import { getCachedPrompt } from "./lib/prompt";
 import personasRoute from "./routes/personas";
@@ -190,7 +190,7 @@ const server = Bun.serve({
         return json(403, { error: "Forbidden origin" });
       }
 
-      const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+      const ip = parseClientIP(req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown");
       if (getChatRateLimitKey(ip)) {
         return json(429, { error: "Rate limit exceeded" });
       }

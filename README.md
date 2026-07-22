@@ -337,9 +337,10 @@ src/
 │   ├── seed.ts           # Demo personas
 │   └── blueprints.ts     # 16 persona templates
 ├── lib/
-│   ├── llm.ts            # LLM client: chat, chatWithUsage, chatStream, queue
+│   ├── llm.ts            # LLM client: chat, chatWithUsage, chatStream
 │   ├── queue.ts          # ConcurrencyQueue
 │   ├── prompt.ts         # System prompt builder + cache
+│   ├── prompt-loader.ts  # External prompt loader (reads skills/*.md)
 │   └── ws-handler.ts     # WebSocket chat handler
 ├── middleware/
 │   ├── auth.ts           # x-api-key + Bearer + CORS
@@ -353,6 +354,14 @@ src/
     ├── ai.ts             # AI enhance backstory
     ├── content.ts        # Caption + image prompt gen
     └── blueprints.ts     # Blueprint listing
+
+skills/
+├── 01-architecture.md       # Architecture, config, auth, DB schema
+├── 02-personas.md           # Complete PersonaConfig reference
+├── 03-api.md                # All endpoint reference
+├── 04-content-system.md     # Content modes, platform rules
+├── 05-caption-prompt.md     # Caption prompt template (loaded at runtime)
+└── 06-image-prompt.md       # Image prompt template (loaded at runtime)
 ```
 
 ---

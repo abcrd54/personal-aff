@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { getDB, safeParseConfig } from "../db";
 import { chat } from "../lib/llm";
 import { apiKeyAuth } from "../middleware/auth";
-import { getChatRateLimitKey } from "../middleware/ratelimit";
+import { getChatRateLimitKey, getClientIP } from "../middleware/ratelimit";
+import { getCaptionSystemPrompt, getImageSystemPrompt } from "../lib/prompt-loader";
 import type { LLMMessage, PersonaConfig } from "../types";
 
 const app = new Hono();
@@ -14,30 +15,34 @@ function getPersona(personaId: string): PersonaConfig | null {
   const row = db.query("SELECT config FROM personas WHERE id = ?").get(personaId) as any;
   if (!row) return null;
   const config = safeParseConfig(row.config);
-  return config && config.name ? config : null;
+  if (!config || !config.name || !config.type || !["personal", "business"].includes(config.type)) {
+    return null;
+  }
+  return config;
 }
 
 function buildIdentityBlock(p: PersonaConfig): string {
+  const s = (v: string) => (v || "").replace(/[\n\r]/g, " ").slice(0, 500);
   const lines: string[] = [];
-  lines.push(`Nama: ${p.displayName || p.name}`);
-  if (p.occupation) lines.push(`Profesi: ${p.occupation}`);
-  if (p.location) lines.push(`Lokasi: ${p.location}`);
+  lines.push(`Nama: ${s(p.displayName || p.name)}`);
+  if (p.occupation) lines.push(`Profesi: ${s(p.occupation)}`);
+  if (p.location) lines.push(`Lokasi: ${s(p.location)}`);
   if (p.age) lines.push(`Usia: ${p.age}`);
-  lines.push(`Kepribadian: ${(p.traits || []).join(", ")}`);
-  if (p.expertise?.length) lines.push(`Keahlian: ${p.expertise.join(", ")}`);
-  if (p.hobbies?.length) lines.push(`Hobi: ${p.hobbies.join(", ")}`);
-  if (p.catchphrases?.length) lines.push(`Catchphrase: ${p.catchphrases.join(" | ")}`);
+  lines.push(`Kepribadian: ${(p.traits || []).map(s).join(", ")}`);
+  if (p.expertise?.length) lines.push(`Keahlian: ${p.expertise.map(s).join(", ")}`);
+  if (p.hobbies?.length) lines.push(`Hobi: ${p.hobbies.map(s).join(", ")}`);
+  if (p.catchphrases?.length) lines.push(`Catchphrase: ${p.catchphrases.map(s).join(" | ")}`);
   lines.push(`Gaya komunikasi: ${p.tone}`);
-  if (p.vocabularyStyle?.length) lines.push(`Cara bicara: ${p.vocabularyStyle.join("; ")}`);
-  lines.push(`Backstory: ${p.backstory}`);
-  if (p.lifeGoals?.length) lines.push(`Tujuan hidup: ${p.lifeGoals.join("; ")}`);
+  if (p.vocabularyStyle?.length) lines.push(`Cara bicara: ${p.vocabularyStyle.map(s).join("; ")}`);
+  lines.push(`Backstory: ${s(p.backstory)}`);
+  if (p.lifeGoals?.length) lines.push(`Tujuan hidup: ${p.lifeGoals.map(s).join("; ")}`);
   return lines.join("\n");
 }
 
 // ==================== GENERATE CAPTION ====================
 
 app.post("/generate-caption", async (c) => {
-  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const ip = getClientIP(c);
   if (getChatRateLimitKey(ip)) {
     return c.json({ error: "Rate limit exceeded" }, 429);
   }
@@ -64,7 +69,7 @@ app.post("/generate-caption", async (c) => {
   const platform = body.platform || cs.platform;
   const tone = body.tone || cs.tone;
   const emojiPref = body.emojiUsage || cs.emojiUsage;
-  const hashtagCount = body.hashtagCount ?? cs.hashtagCount ?? 5;
+  const hashtagCount = Math.min(body.hashtagCount ?? cs.hashtagCount ?? 5, 30);
   const cta = body.callToAction || cs.callToAction || "checkout link di bio";
   const effectiveCta = actualMode === "natural" ? "save & share ke temen" : actualMode === "affiliate" ? (cs.callToAction || "checkout link di bio") : "DM atau klik link di bio untuk order!";
   const format = body.formattingStyle || cs.formattingStyle || "paragraph with line breaks, bold key points with emojis";
@@ -100,54 +105,30 @@ app.post("/generate-caption", async (c) => {
     platformInstructions = `PLATFORM: ${platform} — SINGLE POST, format katalog/spesifikasi, max ${maxLen} karakter.`;
   }
 
-  // --- MODE-SPECIFIC SYSTEM PROMPT ---
-  let modeInstructions = "";
+  const emojiInstruction = emojiPref === "heavy" ? "pakai banyak emoji, hampir setiap kalimat" : emojiPref === "moderate" ? "pakai emoji secukupnya, 1-2 per paragraf" : emojiPref === "minimal" ? "pakai emoji hanya saat penting" : "jangan pakai emoji sama sekali";
 
-  if (actualMode === "natural") {
-    modeInstructions = `
-MODE: NATURAL — PERSONAL STORYTELLING (ABSOLUTELY NO PRODUCTS, NO NICHE, NO SELLING)
-- TULIS cerita PERSONAL & HUMAN — pengalaman hidup, refleksi, opini, curhatan, atau momen sehari-hari.
-- DILARANG KERAS menyebutkan: nama produk, brand, harga, rekomendasi, affiliate link, CTA jualan.
-- DILARANG KERAS membahas topik niche/profesi akun. Jangan sebut skincare, gadget, hiking, kopi, atau apapun terkait produk/jasa.
-- Fokus pada MOMEN KEHIDUPAN: relationship, growth, failure, friendship, family, self-discovery, daily struggle, motivasi, kejadian lucu.
-- Tulis seperti manusia beneran curhat di social media — bukan seperti bot, bukan seperti marketer.
-- Bangun KONEKSI EMOSIONAL. Audiens harus merasa "ini orang beneran, bukan akun jualan".`;
-  } else if (actualMode === "affiliate") {
-    modeInstructions = `
-MODE: AFFILIATE (PERSONAL STORY + NATURAL PRODUCT RECOMMENDATION)
-- Ceritakan pengalaman PERSONAL menggunakan produk. TETAP sesuai identitas & kepribadian akun.
-- Sebutkan 1-2 produk spesifik DARI DAFTAR PRODUK DI BAWAH (wajib dari list).
-- Sebutkan HARGA secara natural dalam cerita, bukan sebagai list spesifikasi.
-- Gaya: "aku personally pake X karena...", tetap terdengar seperti konten personal, bukan iklan.
-- Akhiri dengan CTA natural sesuai platform.${platform === "instagram" ? " Gunakan hook kuat di awal karena caption pendek." : ""}`;
-  } else {
-    modeInstructions = `
-MODE: CATALOG (BUSINESS)
-- Sebutkan SPESIFIKASI produk: nama, harga, dimensi, varian, stok.
-- Format bisnis: bullet points atau section per produk.
-- Akhiri dengan CTA jelas: "DM untuk order", "klik link di bio".`;
-  }
+  const ctaText = actualMode === "natural"
+    ? `Akhiri dengan ajakan personal "${effectiveCta}"`
+    : actualMode === "affiliate"
+    ? `Akhiri dengan ajakan natural "${effectiveCta}"`
+    : `Akhiri dengan CTA jelas "${effectiveCta}"`;
 
-  const systemPrompt = `Kamu adalah social media copywriter yang menulis caption sesuai identitas akun di bawah.
-TULIS HANYA CAPTION-NYA SAJA. Tidak perlu header, tidak perlu penjelasan.
-Langsung tulis caption yang siap copy-paste.
-
-FORMAT: ${format}
-TONALITAS: ${tone}
-EMOJI: ${emojiPref} — ${emojiPref === "heavy" ? "pakai banyak emoji, hampir setiap kalimat" : emojiPref === "moderate" ? "pakai emoji secukupnya, 1-2 per paragraf" : emojiPref === "minimal" ? "pakai emoji hanya saat penting" : "jangan pakai emoji sama sekali"}
-HASHTAG: ${hashtagCount} hashtag di akhir
-${platformInstructions}
-CTA: ${actualMode === "natural" ? `Akhiri dengan ajakan personal "${effectiveCta}"` : actualMode === "affiliate" ? `Akhiri dengan ajakan natural "${effectiveCta}"` : `Akhiri dengan CTA jelas "${effectiveCta}"`}
-PANJANG: Maks ${maxLen} karakter
-
-${modeInstructions}
-
-${isThread
-  ? `BUAT THREAD ${platform === "twitter" ? "3-5 tweet" : "3-5 post"} yang saling sambung. Tiap bagian maks ${maxLen} karakter. Part 1 = hook, part terakhir = CTA. Pisahkan dengan "---". Bahasa: ${persona.language === "english" ? "Inggris" : persona.language === "campur" ? "campur Indonesia-Inggris" : "Indonesia"}.`
-  : count > 1
+  const countInstruction = isThread
+    ? `BUAT THREAD ${platform === "twitter" ? "3-5 tweet" : "3-5 post"} yang saling sambung. Tiap bagian maks ${maxLen} karakter. Part 1 = hook, part terakhir = CTA. Pisahkan dengan "---". Bahasa: ${persona.language === "english" ? "Inggris" : persona.language === "campur" ? "campur Indonesia-Inggris" : "Indonesia"}.`
+    : count > 1
     ? `BUAT ${count} VARIASI caption dengan angle berbeda. Masing-masing maks ${maxLen} karakter. Pisahkan dengan "---".`
-    : `BUAT 1 caption maks ${maxLen} karakter.`
-}`;
+    : `BUAT 1 caption maks ${maxLen} karakter.`;
+
+  const systemPrompt = getCaptionSystemPrompt({
+    format,
+    tone,
+    emojiInstructions: `${emojiPref} — ${emojiInstruction}`,
+    platformInstructions,
+    cta: ctaText,
+    hashtagCount: String(hashtagCount),
+    maxLength: String(maxLen),
+    mode: actualMode,
+  }) + "\n" + countInstruction;
 
   let userPrompt = `IDENTITAS AKUN:\n${buildIdentityBlock(persona)}${cs.examples?.length ? `\n\nCONTOH CAPTION SEBELUMNYA:\n${cs.examples.map((e, i) => `${i + 1}. ${e}`).join("\n")}` : ""}`;
 
@@ -187,7 +168,7 @@ ${isThread
 // ==================== GENERATE IMAGE PROMPT ====================
 
 app.post("/generate-image-prompt", async (c) => {
-  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const ip = getClientIP(c);
   if (getChatRateLimitKey(ip)) {
     return c.json({ error: "Rate limit exceeded" }, 429);
   }
@@ -233,42 +214,10 @@ app.post("/generate-image-prompt", async (c) => {
     ? `Format DALL-E 3: natural language, fokus scene & mood.`
     : `Format ${engine}: deskripsi detail untuk AI image generator.`;
 
-  // --- MODE-SPECIFIC IMAGE INSTRUCTIONS ---
-  let modeInstructions = "";
-
-  if (actualMode === "natural") {
-    modeInstructions = `
-MODE: NATURAL — LIFESTYLE MOMENT (ABSOLUTELY NO PRODUCTS IN FRAME)
-- Gambar TIDAK BOLEH menampilkan produk, brand, logo, kemasan, atau apapun yang berbau komersial.
-- Fokus pada MOMEN KEHIDUPAN MANUSIA: emosi, aktivitas, suasana, interaksi.
-- Setting PERSONAL & RELATABLE: kamar tidur, balkon apartemen, kafe kecil, jalanan kota, taman, dapur rumah.
-- BUKAN gambar produk. BUKAN gambar yang mempromosikan apapun.
-- Tujuan: gambar yang membuat audiens merasa "ini relatable banget, ini gue banget".`;
-  } else if (actualMode === "affiliate") {
-    modeInstructions = `
-MODE: AFFILIATE (PRODUCT + LIFESTYLE)
-- Tampilkan produk dalam KONTEKS PENGGUNAAN NYATA (in-action / in-context).
-- Produk adalah bagian alami dari scene, bukan isolated object.
-- Ada HUMAN ELEMENT atau indikasi penggunaan oleh manusia.
-- Props & setting sesuai identitas akun.
-- Contoh: kalau akun travel → packing cube di atas kasur dengan koper, bukan packing cube isolated di white background.`;
-  } else {
-    modeInstructions = `
-MODE: CATALOG (PRODUCT SHOWROOM)
-- Produk sebagai FOCAL POINT UTAMA, tampilkan spesifikasi visual.
-- Background clean atau showroom setting.
-- Props untuk menunjang visual produk (bantal, meja, karpet untuk sofa).
-- Hashtag/gaya: product photography profesional.`;
-  }
-
-  const systemPrompt = `Kamu adalah AI visual director yang membuat prompt untuk AI image generator.
-${engineInstructions}
-
-${modeInstructions}
-
-TULIS HANYA PROMPT-NYA SAJA. Tidak perlu penjelasan, tidak perlu header.
-Prompt harus detail, spesifik, dan menghasilkan gambar berkualitas profesional.
-Gunakan istilah fotografi: lighting setup, lens type, composition, color grading, depth of field.`;
+  const systemPrompt = getImageSystemPrompt({
+    engineInstructions,
+    mode: actualMode,
+  });
 
   const userPrompt = `IDENTITAS AKUN:\n${buildIdentityBlock(persona)}
 NICHE: ${persona.name} — ${persona.type === "business" ? persona.business?.tagline || persona.business?.businessType || "" : persona.occupation || persona.name}

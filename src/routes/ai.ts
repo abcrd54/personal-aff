@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { chat } from "../lib/llm";
 import { apiKeyAuth } from "../middleware/auth";
-import { getChatRateLimitKey } from "../middleware/ratelimit";
+import { getChatRateLimitKey, getClientIP } from "../middleware/ratelimit";
 import type { LLMMessage } from "../types";
 
 const app = new Hono();
@@ -13,7 +13,7 @@ function sanitize(s: string): string {
 }
 
 app.post("/enhance-backstory", async (c) => {
-  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const ip = getClientIP(c);
   if (getChatRateLimitKey(ip)) {
     return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
   }

@@ -3,7 +3,7 @@ import { getDB, generateId, safeParseConfig } from "../db";
 import { chat } from "../lib/llm";
 import { getCachedPrompt } from "../lib/prompt";
 import { apiKeyAuth } from "../middleware/auth";
-import { getChatRateLimitKey } from "../middleware/ratelimit";
+import { getChatRateLimitKey, getClientIP } from "../middleware/ratelimit";
 import { validateChatMessage } from "../middleware/validation";
 import type { LLMMessage, PersonaConfig } from "../types";
 
@@ -11,7 +11,10 @@ const sessionLocks = new Map<string, Promise<void>>();
 
 function withSessionLock(sessionId: string, fn: () => Promise<any>): Promise<any> {
   const prev = sessionLocks.get(sessionId) || Promise.resolve();
-  const next = prev.then(fn, fn).finally(() => {
+  const next = prev.then(fn).catch((err) => {
+    // Don't retry — propagate error to original caller
+    throw err;
+  }).finally(() => {
     if (sessionLocks.get(sessionId) === next) {
       sessionLocks.delete(sessionId);
     }
@@ -46,7 +49,7 @@ app.post("/", async (c) => {
   const personaRow = db.query("SELECT config FROM personas WHERE id = ?").get(personaId) as any;
   if (!personaRow) return c.json({ error: "Persona not found" }, 404);
 
-  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const ip = getClientIP(c);
   if (getChatRateLimitKey(ip)) {
     return c.json({ error: "Rate limit exceeded. Try again later." }, 429);
   }
